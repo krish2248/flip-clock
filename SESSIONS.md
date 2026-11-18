@@ -10,6 +10,19 @@
 
 ---
 
+## ⚠️ Tell the owner FIRST, at the start of the next session
+
+1. **Back up the upload key** `flip-upload.jks` (lives one folder ABOVE the repo:
+   `C:/Users/sonik/Downloads/flip-clock-main/flip-upload.jks`) together with its password
+   — USB stick or private cloud. Losing it means a multi-day Google support reset.
+2. **Consider a stronger keystore password** before publishing to Play (the current one is
+   easy to guess). If changed, update the git-ignored `keystore.properties` to match.
+
+(The password is NOT written here on purpose — this file is public on GitHub. It's in the
+owner's local `keystore.properties`.)
+
+---
+
 ## Current state (end of Session 5 — 2026-11-18)
 
 - **Version:** 2.1.0 (versionCode 3). Adds Timer + Stopwatch modes, floating navigation,
@@ -23,15 +36,14 @@
   Compose BOM **2025.10.01**, compileSdk/targetSdk **36**, minSdk 26, Robolectric **4.16**
   (tests only). `local.properties` → `sdk.dir=C\:/Users/sonik/AppData/Local/Android/Sdk`
   (escaped colon; lint's PropertyEscape check requires it).
-- **Signing:** wired in `app/build.gradle.kts`, reads git-ignored `keystore.properties`.
-  **No keystore created yet** → release builds are unsigned.
+- **Signing:** ✅ upload keystore created (`../flip-upload.jks`, alias `flip`, PKCS12,
+  RSA 2048, CN=Flip). `keystore.properties` (git-ignored) has `storeFile=../../flip-upload.jks`
+  (resolved relative to `app/`). `assembleRelease` + `bundleRelease` now come out **signed**
+  (verified with apksigner / keytool).
 
 ## Next up
 
-1. **Create upload keystore** (owner should do this so passwords stay with them; keep it
-   OUTSIDE the repo and back it up):
-   `keytool -genkeypair -v -keystore ../flip-upload.jks -alias flip -keyalg RSA -keysize 2048 -validity 10000`
-   then `keystore.properties` in the repo root. Rebuild `bundleRelease`.
+1. ✅ Upload keystore done — just remind the owner about the two items at the top.
 2. **Run on a phone:** `adb install -r app/build/outputs/apk/debug/app-debug.apk`. Check:
    flip feel, timer chime (alarm stream), swipe between modes, controls auto-hide, settings
    sheet + live preview in all 3 modes, widgets, screen saver (Settings → Display → Screen
@@ -181,4 +193,7 @@ pinnable from inside the app.
   shortcuts, timer chime, Robolectric screenshot test, README, 12 new unit tests.
 - Fixed pre-existing layout bug: clock face filled the full width, so burn-in shift pushed
   the first card off-screen → 18 dp side margin.
-- Version 2.1.0 (code 3).
+- Version 2.1.0 (code 3). Pushed to `main` (commits 8804362, 7595c94).
+- Created the upload keystore at the owner's request; signed AAB + APK verified.
+- Owner ended the session here ("call it a night"); next session starts with the two
+  reminders at the top of this file, then device testing (Next up #2).
