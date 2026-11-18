@@ -1,5 +1,6 @@
 package dev.flip.clock.ui
 
+import android.app.Application
 import android.text.format.DateFormat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -10,121 +11,160 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.flip.clock.AppContainer
 import dev.flip.clock.FlipApp
 import dev.flip.clock.settings.FlipSettings
-import dev.flip.clock.settings.FlipSpeed
-import dev.flip.clock.settings.ThemeMode
+import dev.flip.clock.settings.HourFormat
+import dev.flip.clock.time.AlarmFormat
+import dev.flip.clock.time.BatteryInfo
 import dev.flip.clock.time.DateFormats
-import dev.flip.clock.time.DateStyle
+import dev.flip.clock.time.DigitState
 import dev.flip.clock.time.TimeParts
+import dev.flip.clock.time.batteryFlow
+import dev.flip.clock.time.nextAlarmFlow
+import dev.flip.clock.time.spokenSummary
 import dev.flip.clock.time.tickerFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 
 /**
- * Exposes six INDEPENDENT digit flows so a minute change touches at most two
- * composables (spec §6.8), plus settings, date string, AM/PM and a snapToken.
+ * Exposes six INDEPENDENT digit flows so a minute change touches at most two composables
+ * (spec §6.8). Each digit value is packed together with the resync token ([DigitState]) so
+ * "snap instead of animate" is atomic.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ClockViewModel(
-    private val container: AppContainer,
-    systemDefault24h: Boolean,
-    launchThemeMode: ThemeMode
+    private val app: Application,
+    private val container: AppContainer
 ) : ViewModel() {
 
-    private val zone: ZoneId = ZoneId.systemDefault()
+    private data class Sync(val token: Int, val zone: ZoneId, val system24h: Boolean)
+    private data class Tick(val epochMs: Long, val sync: Sync)
+    private data class Parts(val parts: TimeParts, val token: Int)
 
-    private val _snapToken = kotlinx.coroutines.flow.MutableStateFlow(0)
-    val snapToken: StateFlow<Int> get() = _snapToken
+    private val sync = MutableStateFlow(readSync(0))
 
-    /** Bumped on resume / time-change / timezone-change → all digits snap, never animate. */
+    /**
+     * Resume / time / timezone / 12-24 h change: re-read the zone and system hour format,
+     * bump the token and restart the ticker so the corrected time arrives immediately and
+     * every digit snaps to it without animating.
+     */
     fun resync() {
-        _snapToken.value += 1
+        sync.value = readSync(sync.value.token + 1)
     }
 
-    private val tickerSource = tickerFlow(1000)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), System.currentTimeMillis())
+    private fun readSync(token: Int) = Sync(
+        token = token,
+        zone = ZoneId.systemDefault(),
+        system24h = DateFormat.is24HourFormat(app)
+    )
 
-    val settings: StateFlow<FlipSettings> = container.settingsRepository.settings
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5_000),
-            FlipSettings(use24h = systemDefault24h, themeMode = launchThemeMode)
-        )
+    private val stopTimeout = SharingStarted.WhileSubscribed(5_000)
 
-    private fun initialParts(): TimeParts =
-        TimeParts.of(System.currentTimeMillis(), zone, settings.value.use24h)
+    private val ticks: StateFlow<Tick> = sync
+        .flatMapLatest { s -> tickerFlow(1000).map { Tick(it, s) } }
+        .stateIn(viewModelScope, stopTimeout, Tick(System.currentTimeMillis(), sync.value))
 
-    // Six independent digit flows -------------------------------------------------
-    val hourTens: StateFlow<Int> = digitFlow { it.hourTens }
-    val hourOnes: StateFlow<Int> = digitFlow { it.hourOnes }
-    val minuteTens: StateFlow<Int> = digitFlow { it.minuteTens }
-    val minuteOnes: StateFlow<Int> = digitFlow { it.minuteOnes }
-    val secondTens: StateFlow<Int> = digitFlow { it.secondTens }
-    val secondOnes: StateFlow<Int> = digitFlow { it.secondOnes }
+    // ---- settings ---------------------------------------------------------------------
+    /** null until DataStore delivered its first value (used to hold the first frame). */
+    val loadedSettings: StateFlow<FlipSettings?> = container.settingsRepository.settings
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private fun digitFlow(select: (TimeParts) -> Int): StateFlow<Int> =
-        combine(tickerSource, settings) { t, s -> TimeParts.of(t, zone, s.use24h) }
-            .map(select)
-            .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), select(initialParts()))
+    val settings: StateFlow<FlipSettings> = loadedSettings
+        .filterNotNull()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, FlipSettings())
 
-    val isPm: StateFlow<Boolean?> =
-        combine(tickerSource, settings) { t, s -> TimeParts.of(t, zone, s.use24h).isPm }
-            .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initialParts().isPm)
+    fun update(transform: (FlipSettings) -> FlipSettings) {
+        viewModelScope.launch { container.settingsRepository.update(transform) }
+    }
 
-    /** TalkBack summary — changes once a minute at most (spec §9 case 10). */
-    val spokenSummary: StateFlow<String> =
-        combine(tickerSource, settings) { t, s -> TimeParts.of(t, zone, s.use24h) }
-            .map { p ->
-                val h = if (p.hourTens < 0) p.hourOnes else p.hourTens * 10 + p.hourOnes
-                val mm = (p.minuteTens * 10 + p.minuteOnes).let { if (it < 10) "0$it" else "$it" }
-                val suffix = when {
-                    p.is24h -> ""
-                    p.isPm == true -> " PM"
-                    else -> " AM"
-                }
-                "$h:$mm$suffix"
-            }
-            .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    fun resetToDefaults() {
+        viewModelScope.launch { container.settingsRepository.resetToDefaults() }
+    }
 
-    val dateString: StateFlow<String> =
-        combine(tickerSource, settings) { t, s ->
-            if (s.showDate) DateFormats.format(s.dateStyle, Instant.ofEpochMilli(t).atZone(zone)) else ""
-        }
-            .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    private fun FlipSettings.is24h(system24h: Boolean): Boolean = when (hourFormat) {
+        HourFormat.SYSTEM -> system24h
+        HourFormat.H12 -> false
+        HourFormat.H24 -> true
+    }
 
-    // Settings mutators ------------------------------------------------------------
-    suspend fun setThemeMode(mode: ThemeMode) = container.settingsRepository.setThemeMode(mode)
-    suspend fun setUse24h(v: Boolean) = container.settingsRepository.setUse24h(v)
-    suspend fun setShowSeconds(v: Boolean) = container.settingsRepository.setShowSeconds(v)
-    suspend fun setShowDate(v: Boolean) = container.settingsRepository.setShowDate(v)
-    suspend fun setDateStyle(s: DateStyle) = container.settingsRepository.setDateStyle(s)
-    suspend fun setFlipSpeed(s: FlipSpeed) = container.settingsRepository.setFlipSpeed(s)
-    suspend fun setFlipBounce(v: Boolean) = container.settingsRepository.setFlipBounce(v)
-    suspend fun setKeepScreenOn(v: Boolean) = container.settingsRepository.setKeepScreenOn(v)
-    suspend fun setAutoDim(v: Boolean) = container.settingsRepository.setAutoDim(v)
-    suspend fun setDimDelaySec(v: Int) = container.settingsRepository.setDimDelaySec(v)
-    suspend fun setSoundEnabled(v: Boolean) = container.settingsRepository.setSoundEnabled(v)
-    suspend fun setShowBattery(v: Boolean) = container.settingsRepository.setShowBattery(v)
-    suspend fun setLandscapeFullscreen(v: Boolean) =
-        container.settingsRepository.setLandscapeFullscreen(v)
+    val use24h: StateFlow<Boolean> = combine(settings, sync) { s, y -> s.is24h(y.system24h) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, settings.value.is24h(sync.value.system24h))
+
+    // ---- time -------------------------------------------------------------------------
+    private fun partsOf(t: Tick, s: FlipSettings) =
+        Parts(TimeParts.of(t.epochMs, t.sync.zone, s.is24h(t.sync.system24h), s.leadingZero), t.sync.token)
+
+    private val parts: StateFlow<Parts> = combine(ticks, settings, ::partsOf)
+        .stateIn(viewModelScope, stopTimeout, partsOf(ticks.value, settings.value))
+
+    private fun digit(select: (TimeParts) -> Int): StateFlow<Int> =
+        parts.map { DigitState.of(select(it.parts), it.token).packed }
+            .stateIn(viewModelScope, stopTimeout, DigitState.of(select(parts.value.parts), parts.value.token).packed)
+
+    val hourTens: StateFlow<Int> = digit { it.hourTens }
+    val hourOnes: StateFlow<Int> = digit { it.hourOnes }
+    val minuteTens: StateFlow<Int> = digit { it.minuteTens }
+    val minuteOnes: StateFlow<Int> = digit { it.minuteOnes }
+    val secondTens: StateFlow<Int> = digit { it.secondTens }
+    val secondOnes: StateFlow<Int> = digit { it.secondOnes }
+
+    val isPm: StateFlow<Boolean?> = parts.map { it.parts.isPm }
+        .stateIn(viewModelScope, stopTimeout, parts.value.parts.isPm)
+
+    /** Changes once a minute; drives date, alarm label, burn-in shift and TalkBack. */
+    private val minute: StateFlow<Tick> = ticks
+        .distinctUntilChanged { a, b -> a.epochMs / 60_000 == b.epochMs / 60_000 && a.sync == b.sync }
+        .stateIn(viewModelScope, stopTimeout, ticks.value)
+
+    val epochMinute: StateFlow<Long> = minute.map { it.epochMs / 60_000 }
+        .stateIn(viewModelScope, stopTimeout, minute.value.epochMs / 60_000)
+
+    val spokenTime: StateFlow<String> = parts
+        .map { it.parts.spokenSummary() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, stopTimeout, parts.value.parts.spokenSummary())
+
+    private fun dateOf(t: Tick, s: FlipSettings): String =
+        if (!s.showDate) "" else DateFormats.format(s.dateStyle, Instant.ofEpochMilli(t.epochMs).atZone(t.sync.zone))
+
+    val dateText: StateFlow<String> = combine(minute, settings, ::dateOf)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, stopTimeout, dateOf(minute.value, settings.value))
+
+    // ---- system signals ---------------------------------------------------------------
+    val battery: StateFlow<BatteryInfo> = batteryFlow(app)
+        .stateIn(viewModelScope, stopTimeout, BatteryInfo.Unknown)
+
+    private val nextAlarm: StateFlow<Long?> = nextAlarmFlow(app)
+        .stateIn(viewModelScope, stopTimeout, null)
+
+    /** "7:00 AM" / "Thu 7:00 AM", or "" when hidden or no alarm is set. */
+    val alarmText: StateFlow<String> = combine(nextAlarm, minute, settings, use24h) { alarm, t, s, h24 ->
+        if (!s.showAlarm || alarm == null || alarm < t.epochMs) ""
+        else AlarmFormat.format(alarm, t.epochMs, h24, t.sync.zone)
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, stopTimeout, "")
+
+    // ---- misc -------------------------------------------------------------------------
+    fun markHintShown() = update { it.copy(hintShown = true) }
+
+    val soundPlayer get() = container.soundPlayer
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as FlipApp
-                ClockViewModel(
-                    container = app.container,
-                    systemDefault24h = DateFormat.is24HourFormat(app),
-                    launchThemeMode = app.container.settingsRepository.mirroredThemeMode()
-                )
+                ClockViewModel(app, app.container)
             }
         }
     }

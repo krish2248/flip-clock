@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0B0B0D</color>
+    <color name="splash_background">#0B0B0D</color>
+
+    <!-- Widget XML defaults (Midnight): what previews show before the app styles them. -->
+    <color name="widget_default_screen">#FF0B0B0D</color>
+    <color name="widget_default_card_top">#FF1E1E23</color>
+    <color name="widget_default_card_bottom">#FF18181C</color>
+    <color name="widget_default_digit">#FFF4F4F6</color>
+    <color name="widget_default_secondary">#FFB4B4BE</color>
+    <color name="widget_default_accent">#FFE8A33D</color>
+
+    <!-- Material You widget colours. Real values live in values-v31 / values-night-v31. -->
+    <color name="widget_dyn_screen">#FFEFEFEA</color>
+    <color name="widget_dyn_card_top">#FFFDFDFB</color>
+    <color name="widget_dyn_card_bottom">#FFF4F4F0</color>
+    <color name="widget_dyn_digit">#FF1A1A1C</color>
+    <color name="widget_dyn_secondary">#FF6E6E75</color>
+    <color name="widget_dyn_accent">#FFC2761A</color>
 </resources>

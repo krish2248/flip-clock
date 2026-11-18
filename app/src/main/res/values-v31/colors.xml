@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_dyn_screen">@android:color/system_neutral2_100</color>
+    <color name="widget_dyn_card_top">@android:color/system_neutral1_10</color>
+    <color name="widget_dyn_card_bottom">@android:color/system_neutral1_50</color>
+    <color name="widget_dyn_digit">@android:color/system_accent1_900</color>
+    <color name="widget_dyn_secondary">@android:color/system_neutral2_600</color>
+    <color name="widget_dyn_accent">@android:color/system_accent1_600</color>
+</resources>

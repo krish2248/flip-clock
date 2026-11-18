@@ -1,132 +1,163 @@
 package dev.flip.clock.flip
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.flip.clock.ui.theme.FlipColors
 
 enum class Half { TOP, BOTTOM }
 
-fun halfShape(half: Half, radius: Dp) = when (half) {
-    Half.TOP -> RoundedCornerShape(
-        topStart = radius, topEnd = radius, bottomStart = 0.dp, bottomEnd = 0.dp
-    )
-    Half.BOTTOM -> RoundedCornerShape(
-        topStart = 0.dp, topEnd = 0.dp, bottomStart = radius, bottomEnd = radius
-    )
-}
-
 /**
- * One static half of a digit card. The glyph is drawn ONCE at full card size and
- * clipped by this half — never draw two half glyphs (spec §5.1).
+ * Pre-built drawing primitives for one card size: half-card paths, sheen gradients, seam
+ * metrics and hairline stroke. Built once per size in `remember`, then shared by every
+ * digit — draw calls never allocate (spec §0 rule 5).
+ *
+ * The glyph is drawn ONCE at full card size and clipped per half — never two half
+ * glyphs (spec §5.1).
  */
-@Composable
-fun CardHalf(
-    digit: Int,
-    half: Half,
-    cardW: Dp,
-    cardH: Dp,
-    radius: Dp,
-    colors: FlipColors,
-    modifier: Modifier = Modifier
+@Stable
+class CardPainter(
+    val widthPx: Float,
+    val heightPx: Float,
+    radiusPx: Float,
+    seamPx: Float,
+    hairlinePx: Float
 ) {
-    val bg = if (half == Half.TOP) colors.cardTop else colors.cardBottom
-    Box(
-        modifier
-            .size(cardW, cardH / 2)
-            .clip(halfShape(half, radius))
-            .background(bg)
-            .edgeStroke(colors)
-    ) {
-        Box(
-            Modifier
-                .size(cardW, cardH)
-                .offset(y = if (half == Half.TOP) 0.dp else -(cardH / 2))
-        ) {
-            DigitFace(digit = digit, cardW = cardW, cardH = cardH, digitColor = colors.digit)
+    val halfHeightPx: Float = heightPx / 2f
+    val halfSize = Size(widthPx, halfHeightPx)
+
+    private val topPath = Path().apply {
+        addRoundRect(
+            RoundRect(
+                left = 0f, top = 0f, right = widthPx, bottom = halfHeightPx,
+                topLeftCornerRadius = CornerRadius(radiusPx),
+                topRightCornerRadius = CornerRadius(radiusPx),
+                bottomRightCornerRadius = CornerRadius.Zero,
+                bottomLeftCornerRadius = CornerRadius.Zero
+            )
+        )
+    }
+    private val bottomPath = Path().apply {
+        addRoundRect(
+            RoundRect(
+                left = 0f, top = 0f, right = widthPx, bottom = halfHeightPx,
+                topLeftCornerRadius = CornerRadius.Zero,
+                topRightCornerRadius = CornerRadius.Zero,
+                bottomRightCornerRadius = CornerRadius(radiusPx),
+                bottomLeftCornerRadius = CornerRadius(radiusPx)
+            )
+        )
+    }
+
+    /** Light falling from above: faint highlight at the top of the upper half… */
+    private val topSheen = Brush.verticalGradient(
+        0f to Color.White.copy(alpha = 0.07f),
+        0.6f to Color.Transparent,
+        startY = 0f, endY = halfHeightPx
+    )
+
+    /** …and a faint falloff towards the bottom of the lower half. */
+    private val bottomSheen = Brush.verticalGradient(
+        0.35f to Color.Transparent,
+        1f to Color.Black.copy(alpha = 0.10f),
+        startY = 0f, endY = halfHeightPx
+    )
+
+    /** Cast shadow from the moving flap onto the static lower half (spec §6.5.3). */
+    val castShadow = Brush.verticalGradient(
+        0f to Color.Black, 0.55f to Color.Transparent,
+        startY = 0f, endY = halfHeightPx
+    )
+
+    private val hairline = Stroke(width = hairlinePx)
+    private val hairInset = hairlinePx / 2f
+    private val edgeRect = RoundRect(
+        left = hairInset, top = hairInset,
+        right = widthPx - hairInset, bottom = heightPx - hairInset,
+        cornerRadius = CornerRadius((radiusPx - hairInset).coerceAtLeast(0f))
+    )
+    private val edgePath = Path().apply { addRoundRect(edgeRect) }
+
+    // Seam (spec §5.1): background-coloured gap with highlight + shadow hairlines.
+    private val seamTop = halfHeightPx - seamPx / 2f
+    private val seamSize = Size(widthPx, seamPx)
+    private val lineSize = Size(widthPx, hairlinePx)
+    private val hiTop = seamTop - hairlinePx
+    private val loTop = seamTop + seamPx
+
+    // Hinge notches: small cut-outs at the sides where the axle of a real unit passes.
+    private val notchW = (widthPx * 0.035f).coerceAtLeast(hairlinePx * 2f)
+    private val notchH = heightPx * 0.075f
+    private val notchSize = Size(notchW, notchH)
+    private val notchTop = halfHeightPx - notchH / 2f
+    private val notchRight = widthPx - notchW
+
+    /** Draws one half (local coordinates: the half's own w × h/2 box). */
+    fun drawHalf(
+        scope: DrawScope,
+        half: Half,
+        glyphs: GlyphCache,
+        digit: Int,
+        base: Color,
+        digitColor: Color
+    ) = with(scope) {
+        val path = if (half == Half.TOP) topPath else bottomPath
+        drawPath(path, base)
+        drawPath(path, if (half == Half.TOP) topSheen else bottomSheen)
+        val layout = glyphs.layout(digit)
+        if (layout != null) {
+            val origin = glyphs.origin(digit)
+            clipRect(0f, 0f, widthPx, halfHeightPx) {
+                translate(top = if (half == Half.TOP) 0f else -halfHeightPx) {
+                    drawText(layout, color = digitColor, topLeft = origin)
+                }
+            }
         }
+    }
+
+    /** Shadow/scrim over one half (local coordinates). */
+    fun drawScrim(scope: DrawScope, half: Half, alpha: Float) = with(scope) {
+        if (alpha <= 0.003f) return@with
+        drawPath(if (half == Half.TOP) topPath else bottomPath, Color.Black, alpha = alpha)
+    }
+
+    /** Hairline outline + seam + hinge notches, over the full card. */
+    fun drawFrame(scope: DrawScope, screen: Color, edge: Color, seamHighlight: Color) = with(scope) {
+        drawPath(edgePath, edge, style = hairline)
+        drawRect(screen, Offset(0f, seamTop), seamSize)
+        drawRect(seamHighlight, Offset(0f, hiTop), lineSize, alpha = 0.5f)
+        drawRect(Color.Black, Offset(0f, loTop), lineSize, alpha = 0.25f)
+        drawRect(screen, Offset(0f, notchTop), notchSize)
+        drawRect(screen, Offset(notchRight, notchTop), notchSize)
     }
 }
 
-/** Hairline 1px outline on the card edge. */
-private fun Modifier.edgeStroke(colors: FlipColors): Modifier = drawBehind {
-    val stroke = 1.dp.toPx()
-    drawRect(
-        color = colors.cardEdge,
-        topLeft = Offset(stroke / 2f, stroke / 2f),
-        size = Size(size.width - stroke, size.height - stroke),
-        style = Stroke(width = stroke)
-    )
-}
-
-/**
- * The seam across the middle of a full card (spec §5.1): a 2dp gap of the screen
- * background plus highlight/shadow hairlines. Drawn with zero per-frame allocation.
- */
 @Composable
-fun Seam(cardW: Dp, cardH: Dp, colors: FlipColors, modifier: Modifier = Modifier) {
+fun rememberCardPainter(cardW: Dp, cardH: Dp, radius: Dp): CardPainter {
     val density = LocalDensity.current
-    val metrics = remember(cardW, cardH, density) {
+    return remember(cardW, cardH, radius, density) {
         with(density) {
-            val h = cardH.toPx()
-            val w = cardW.toPx()
-            val band = 2.dp.toPx()
-            SeamMetrics(
-                width = w,
-                bandTop = h / 2f - band / 2f,
-                bandHeight = band,
-                hiTop = h / 2f - band / 2f - 1.dp.toPx(),
-                loTop = h / 2f + band / 2f
+            CardPainter(
+                widthPx = cardW.toPx(),
+                heightPx = cardH.toPx(),
+                radiusPx = radius.toPx(),
+                seamPx = (cardH * 0.012f).coerceIn(1.5.dp, 4.dp).toPx(),
+                hairlinePx = 1.dp.toPx().coerceAtLeast(1f)
             )
         }
     }
-    Box(modifier.size(cardW, cardH).drawBehind {
-        // background-colored gap
-        drawRect(colors.screen, Offset(0f, metrics.bandTop), Size(metrics.width, metrics.bandHeight))
-        // highlight line at seamTop
-        drawRect(colors.seamHighlight.copy(alpha = 0.5f), Offset(0f, metrics.hiTop), Size(metrics.width, 1.dp.toPx()))
-        // shadow line at seamBottom
-        drawRect(Color.Black.copy(alpha = 0.25f), Offset(0f, metrics.loTop), Size(metrics.width, 1.dp.toPx()))
-    })
-}
-
-private data class SeamMetrics(
-    val width: Float,
-    val bandTop: Float,
-    val bandHeight: Float,
-    val hiTop: Float,
-    val loTop: Float
-)
-
-/** Cast shadow drawn over the static lower half; alpha peaks mid-flip (spec §6.5.3). */
-@Composable
-fun CastShadowOverlay(
-    progressProvider: () -> Float,
-    shadeScale: Float,
-    modifier: Modifier = Modifier
-) {
-    val brush = remember {
-        Brush.verticalGradient(
-            0f to Color.Black, 0.55f to Color.Transparent
-        )
-    }
-    Box(modifier.drawBehind {
-        val a = FlipMath.castShadowAlphaAt(progressProvider(), shadeScale)
-        if (a > 0.003f) drawRect(brush = brush, alpha = a)
-    })
 }

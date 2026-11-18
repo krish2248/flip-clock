@@ -1,12 +1,11 @@
 package dev.flip.clock.flip
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlin.math.min
 
-/**
- * Card sizing math (spec §5.3). Pure function of available size, orientation and group count.
- */
+/** Card sizing (spec §5.3). Pure function of available size, orientation and options. */
+@Immutable
 data class FlipGeometry(
     val cardW: Dp,
     val cardH: Dp,
@@ -14,7 +13,7 @@ data class FlipGeometry(
     val innerGap: Dp,
     /** Gap between groups (HH | MM) = 0.42 * cardW; hosts the separator. */
     val groupGap: Dp,
-    /** Corner radius R = 0.10 * cardH clamped to [8, 28] dp. */
+    /** Corner radius = factor * cardH clamped to [3, 32] dp. */
     val cornerRadius: Dp,
     /** True when the screen is too narrow for seconds (spec §9 case 5). */
     val secondsForcedOff: Boolean
@@ -26,37 +25,45 @@ object FlipGeometryCalculator {
     val MIN_CARD_H = 64.dp
     val MAX_CARD_H = 340.dp
 
-    fun compute(availW: Dp, availH: Dp, landscape: Boolean, showSeconds: Boolean): FlipGeometry {
+    fun compute(
+        availW: Dp,
+        availH: Dp,
+        landscape: Boolean,
+        showSeconds: Boolean,
+        scale: Float = 1f,
+        radiusFactor: Float = 0.10f
+    ): FlipGeometry {
         val groups = if (showSeconds) 3 else 2
         val digits = groups * 2
         val sepCount = groups - 1
 
-        val widthUnits =
-            digits * 1f + groups * 0.06f + sepCount * 0.42f
-
+        val widthUnits = digits * 1f + groups * 0.06f + sepCount * 0.42f
         val cardWFromW = availW / widthUnits
-        val cardHFromW = cardWFromW / CARD_ASPECT
-
         val heightFraction = if (landscape) 0.78f else 0.42f
-        val cardHFromH = availH * heightFraction
-        val cardWFromH = cardHFromH * CARD_ASPECT
+        val cardWFromH = availH * heightFraction * CARD_ASPECT
 
-        var cardW = cardWFromW.coerceAtMost(cardWFromH)
-        var cardH = cardW / CARD_ASPECT
+        val fitW = if (cardWFromW < cardWFromH) cardWFromW else cardWFromH
+        val fitH = fitW / CARD_ASPECT
 
-        if (showSeconds && cardH < MIN_CARD_H) {
-            // Retry without the seconds group before clamping (spec §9 case 5).
-            return compute(availW, availH, landscape, showSeconds = false).copy(secondsForcedOff = true)
+        if (showSeconds && fitH < MIN_CARD_H) {
+            // Too narrow: drop the seconds group rather than shrinking below legibility.
+            return compute(availW, availH, landscape, false, scale, radiusFactor)
+                .copy(secondsForcedOff = true)
         }
-        cardH = cardH.coerceIn(MIN_CARD_H, MAX_CARD_H)
-        cardW = cardH * CARD_ASPECT
+
+        // The user's size preference scales down from "fit", never above it, and never
+        // below the legibility floor — but the floor may not overflow the screen either.
+        val maxFitH = fitH.coerceAtMost(MAX_CARD_H)
+        val scaled = maxFitH * scale.coerceIn(0.3f, 1f)
+        val cardH = scaled.coerceAtLeast(MIN_CARD_H.coerceAtMost(maxFitH))
+        val cardW = cardH * CARD_ASPECT
 
         return FlipGeometry(
             cardW = cardW,
             cardH = cardH,
             innerGap = cardW * 0.06f,
             groupGap = cardW * 0.42f,
-            cornerRadius = (cardH * 0.10f).coerceIn(8.dp, 28.dp),
+            cornerRadius = (cardH * radiusFactor).coerceIn(3.dp, 32.dp),
             secondsForcedOff = false
         )
     }

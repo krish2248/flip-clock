@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Dark-first window background: no white flash on cold start (spec section 3). -->
     <style name="Theme.Flip" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#0B0B0D</item>
+        <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

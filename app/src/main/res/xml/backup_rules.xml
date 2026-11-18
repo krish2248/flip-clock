@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 6 to 11: back up settings (DataStore + prefs). Widget ids are per device. -->
+<full-backup-content>
+    <include domain="file" path="datastore/" />
+    <include domain="sharedpref" path="." />
+    <exclude domain="sharedpref" path="flip_widgets.xml" />
+</full-backup-content>

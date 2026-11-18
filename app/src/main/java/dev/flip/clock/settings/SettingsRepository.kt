@@ -2,119 +2,195 @@ package dev.flip.clock.settings
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.text.format.DateFormat
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dev.flip.clock.time.DateStyle
+import dev.flip.clock.ui.theme.ClockFont
+import dev.flip.clock.ui.theme.ClockTheme
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "flip_settings")
 
 /**
- * DataStore-backed settings (spec §7.1) plus a tiny synchronous SharedPreferences
- * mirror of the theme keys for cold-start reads (spec §9 case 11).
+ * DataStore-backed settings plus a tiny synchronous SharedPreferences mirror of the keys
+ * that must be readable without suspending: the cold-start theme (spec §9 case 11) and the
+ * values home-screen widgets need when they "match the app".
  */
-class SettingsRepository(private val context: Context) {
+class SettingsRepository(context: Context) {
+
+    private val appContext = context.applicationContext
 
     private object Keys {
-        val themeMode = stringPreferencesKey("theme_mode")
-        val use24h = booleanPreferencesKey("use_24h")
+        val theme = stringPreferencesKey("clock_theme")
+        val font = stringPreferencesKey("clock_font")
+        val cardShape = stringPreferencesKey("card_shape")
+        val clockScale = floatPreferencesKey("clock_scale")
+        val separator = stringPreferencesKey("separator_style")
+        val hourFormat = stringPreferencesKey("hour_format")
+        val leadingZero = booleanPreferencesKey("leading_zero")
         val showSeconds = booleanPreferencesKey("show_seconds")
-        val showDate = booleanPreferencesKey("show_date")
-        val dateStyle = stringPreferencesKey("date_style")
         val flipSpeed = stringPreferencesKey("flip_speed")
         val flipBounce = booleanPreferencesKey("flip_bounce")
-        val keepScreenOn = booleanPreferencesKey("keep_screen_on")
+        val soundEnabled = booleanPreferencesKey("sound_enabled")
+        val showDate = booleanPreferencesKey("show_date")
+        val dateStyle = stringPreferencesKey("date_style")
+        val showAlarm = booleanPreferencesKey("show_alarm")
+        val showBattery = booleanPreferencesKey("show_battery")
+        val keepAwake = stringPreferencesKey("keep_awake")
         val autoDim = booleanPreferencesKey("auto_dim")
         val dimDelaySec = intPreferencesKey("dim_delay_sec")
-        val soundEnabled = booleanPreferencesKey("sound_enabled")
-        val showBattery = booleanPreferencesKey("show_battery")
-        val landscapeFullscreen = booleanPreferencesKey("landscape_fullscreen")
+        val dimLevel = stringPreferencesKey("dim_level")
+        val nightMode = stringPreferencesKey("night_mode")
+        val burnInShift = booleanPreferencesKey("burn_in_shift")
+        val fullscreen = stringPreferencesKey("fullscreen_mode")
+        val hintShown = booleanPreferencesKey("hint_shown")
+
+        // v1 keys, read once for migration.
+        val legacyThemeMode = stringPreferencesKey("theme_mode")
+        val legacyUse24h = booleanPreferencesKey("use_24h")
+        val legacyKeepScreenOn = booleanPreferencesKey("keep_screen_on")
+        val legacyLandscapeFullscreen = booleanPreferencesKey("landscape_fullscreen")
     }
 
     private val mirror: SharedPreferences =
-        context.getSharedPreferences("flip_settings_mirror", Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(MIRROR_FILE, Context.MODE_PRIVATE)
 
-    private fun systemDefault24h(): Boolean = DateFormat.is24HourFormat(context)
+    /** Synchronous cold-start read of the theme (avoids a wrong-colour first frame). */
+    fun mirroredTheme(): ClockTheme = ClockTheme.fromName(mirror.getString(MIRROR_THEME, null))
 
-    /** Cold-start read; used to pick the launch palette before DataStore loads (§9 case 11). */
-    fun mirroredThemeMode(): ThemeMode =
-        when (
-            runCatching { mirror.getString(Keys.themeMode.name, ThemeMode.DARK.name) }.getOrNull()
-        ) {
-            ThemeMode.LIGHT.name -> ThemeMode.LIGHT
-            ThemeMode.SYSTEM.name -> ThemeMode.SYSTEM
-            else -> ThemeMode.DARK
+    val settings: Flow<FlipSettings> = appContext.dataStore.data
+        .map(::read)
+        .distinctUntilChanged()
+
+    /** Atomically read-modify-write every setting. */
+    suspend fun update(transform: (FlipSettings) -> FlipSettings) {
+        var written: FlipSettings? = null
+        appContext.dataStore.edit { p ->
+            val next = transform(read(p))
+            write(p, next)
+            written = next
         }
+        written?.let(::writeMirror)
+    }
 
-    /** Dark-first assumption for anything unresolved: avoids a white cold-start flash. */
-    fun mirroredIsDark(): Boolean = mirroredThemeMode() != ThemeMode.LIGHT
+    /** Make sure the synchronous mirror reflects stored values (e.g. after a v1 upgrade). */
+    suspend fun syncMirror() {
+        writeMirror(settings.first())
+    }
 
-    val settings: Flow<FlipSettings> = context.dataStore.data.map { p ->
-        FlipSettings(
-            themeMode = enumOrDefault(p[Keys.themeMode], ThemeMode.DARK),
-            use24h = p[Keys.use24h] ?: systemDefault24h(),
-            showSeconds = p[Keys.showSeconds] ?: false,
-            showDate = p[Keys.showDate] ?: true,
-            dateStyle = enumOrDefault(p[Keys.dateStyle], DateStyle.DAY_MONTH),
-            flipSpeed = enumOrDefault(p[Keys.flipSpeed], FlipSpeed.NORMAL),
-            flipBounce = p[Keys.flipBounce] ?: true,
-            keepScreenOn = p[Keys.keepScreenOn] ?: true,
-            autoDim = p[Keys.autoDim] ?: true,
-            dimDelaySec = p[Keys.dimDelaySec] ?: 30,
-            soundEnabled = p[Keys.soundEnabled] ?: false,
-            showBattery = p[Keys.showBattery] ?: false,
-            landscapeFullscreen = p[Keys.landscapeFullscreen] ?: true
+    /** Restore every user-facing default (keeps the "hint shown" flag). */
+    suspend fun resetToDefaults() = update { FlipSettings(hintShown = it.hintShown) }
+
+    private fun read(p: Preferences): FlipSettings {
+        val d = FlipSettings()
+        return FlipSettings(
+            theme = p[Keys.theme]?.let { ClockTheme.fromName(it) } ?: legacyTheme(p[Keys.legacyThemeMode]),
+            font = ClockFont.fromName(p[Keys.font]),
+            cardShape = enumOr(p[Keys.cardShape], d.cardShape),
+            clockScale = (p[Keys.clockScale] ?: d.clockScale).coerceIn(CLOCK_SCALE_MIN, CLOCK_SCALE_MAX),
+            separator = enumOr(p[Keys.separator], d.separator),
+            hourFormat = p[Keys.hourFormat]?.let { enumOr(it, d.hourFormat) }
+                ?: p[Keys.legacyUse24h]?.let { if (it) HourFormat.H24 else HourFormat.H12 }
+                ?: d.hourFormat,
+            leadingZero = p[Keys.leadingZero] ?: d.leadingZero,
+            showSeconds = p[Keys.showSeconds] ?: d.showSeconds,
+            flipSpeed = enumOr(p[Keys.flipSpeed], d.flipSpeed),
+            flipBounce = p[Keys.flipBounce] ?: d.flipBounce,
+            soundEnabled = p[Keys.soundEnabled] ?: d.soundEnabled,
+            showDate = p[Keys.showDate] ?: d.showDate,
+            dateStyle = DateStyle.fromName(p[Keys.dateStyle]),
+            showAlarm = p[Keys.showAlarm] ?: d.showAlarm,
+            showBattery = p[Keys.showBattery] ?: d.showBattery,
+            keepAwake = p[Keys.keepAwake]?.let { enumOr(it, d.keepAwake) }
+                ?: p[Keys.legacyKeepScreenOn]?.let { if (it) KeepAwake.ALWAYS else KeepAwake.NEVER }
+                ?: d.keepAwake,
+            autoDim = p[Keys.autoDim] ?: d.autoDim,
+            dimDelaySec = (p[Keys.dimDelaySec] ?: d.dimDelaySec).coerceIn(5, 3600),
+            dimLevel = enumOr(p[Keys.dimLevel], d.dimLevel),
+            nightMode = enumOr(p[Keys.nightMode], d.nightMode),
+            burnInShift = p[Keys.burnInShift] ?: d.burnInShift,
+            fullscreen = p[Keys.fullscreen]?.let { enumOr(it, d.fullscreen) }
+                ?: p[Keys.legacyLandscapeFullscreen]?.let {
+                    if (it) FullscreenMode.LANDSCAPE else FullscreenMode.NEVER
+                }
+                ?: d.fullscreen,
+            hintShown = p[Keys.hintShown] ?: d.hintShown
         )
     }
 
-    suspend fun setThemeMode(mode: ThemeMode) {
-        mirror.edit().putString(Keys.themeMode.name, mode.name).apply()
-        context.dataStore.edit { it[Keys.themeMode] = mode.name }
+    private fun write(p: MutablePreferences, s: FlipSettings) {
+        p[Keys.theme] = s.theme.name
+        p[Keys.font] = s.font.name
+        p[Keys.cardShape] = s.cardShape.name
+        p[Keys.clockScale] = s.clockScale
+        p[Keys.separator] = s.separator.name
+        p[Keys.hourFormat] = s.hourFormat.name
+        p[Keys.leadingZero] = s.leadingZero
+        p[Keys.showSeconds] = s.showSeconds
+        p[Keys.flipSpeed] = s.flipSpeed.name
+        p[Keys.flipBounce] = s.flipBounce
+        p[Keys.soundEnabled] = s.soundEnabled
+        p[Keys.showDate] = s.showDate
+        p[Keys.dateStyle] = s.dateStyle.name
+        p[Keys.showAlarm] = s.showAlarm
+        p[Keys.showBattery] = s.showBattery
+        p[Keys.keepAwake] = s.keepAwake.name
+        p[Keys.autoDim] = s.autoDim
+        p[Keys.dimDelaySec] = s.dimDelaySec
+        p[Keys.dimLevel] = s.dimLevel.name
+        p[Keys.nightMode] = s.nightMode.name
+        p[Keys.burnInShift] = s.burnInShift
+        p[Keys.fullscreen] = s.fullscreen.name
+        p[Keys.hintShown] = s.hintShown
+        p.remove(Keys.legacyThemeMode)
+        p.remove(Keys.legacyUse24h)
+        p.remove(Keys.legacyKeepScreenOn)
+        p.remove(Keys.legacyLandscapeFullscreen)
     }
 
-    suspend fun setUse24h(value: Boolean) {
-        mirror.edit().putBoolean(Keys.use24h.name, value).apply()
-        context.dataStore.edit { it[Keys.use24h] = value }
+    private fun writeMirror(s: FlipSettings) {
+        val changed = mirror.getString(MIRROR_THEME, null) != s.theme.name ||
+            mirror.getString(MIRROR_HOURS, null) != s.hourFormat.name ||
+            mirror.getBoolean(MIRROR_LEADING_ZERO, false) != s.leadingZero
+        if (!changed) return
+        mirror.edit()
+            .putString(MIRROR_THEME, s.theme.name)
+            .putString(MIRROR_HOURS, s.hourFormat.name)
+            .putBoolean(MIRROR_LEADING_ZERO, s.leadingZero)
+            .apply()
+        onMirrorChanged?.invoke()
     }
 
-    suspend fun setShowSeconds(value: Boolean) =
-        context.dataStore.edit { it[Keys.showSeconds] = value }
+    /** Called when values that widgets mirror change (wired to the widget updater). */
+    @Volatile
+    var onMirrorChanged: (() -> Unit)? = null
 
-    suspend fun setShowDate(value: Boolean) =
-        context.dataStore.edit { it[Keys.showDate] = value }
+    private fun legacyTheme(mode: String?): ClockTheme = when (mode) {
+        "LIGHT" -> ClockTheme.PAPER
+        "DARK" -> ClockTheme.MIDNIGHT
+        else -> ClockTheme.AUTO
+    }
 
-    suspend fun setDateStyle(style: DateStyle) =
-        context.dataStore.edit { it[Keys.dateStyle] = style.name }
+    private inline fun <reified T : Enum<T>> enumOr(name: String?, default: T): T =
+        name?.let { n -> enumValues<T>().firstOrNull { it.name == n } } ?: default
 
-    suspend fun setFlipSpeed(speed: FlipSpeed) =
-        context.dataStore.edit { it[Keys.flipSpeed] = speed.name }
+    companion object {
+        const val MIRROR_FILE = "flip_settings_mirror"
+        const val MIRROR_THEME = "clock_theme"
+        const val MIRROR_HOURS = "hour_format"
+        const val MIRROR_LEADING_ZERO = "leading_zero"
 
-    suspend fun setFlipBounce(value: Boolean) =
-        context.dataStore.edit { it[Keys.flipBounce] = value }
-
-    suspend fun setKeepScreenOn(value: Boolean) =
-        context.dataStore.edit { it[Keys.keepScreenOn] = value }
-
-    suspend fun setAutoDim(value: Boolean) =
-        context.dataStore.edit { it[Keys.autoDim] = value }
-
-    suspend fun setDimDelaySec(seconds: Int) =
-        context.dataStore.edit { it[Keys.dimDelaySec] = seconds }
-
-    suspend fun setSoundEnabled(value: Boolean) =
-        context.dataStore.edit { it[Keys.soundEnabled] = value }
-
-    suspend fun setShowBattery(value: Boolean) =
-        context.dataStore.edit { it[Keys.showBattery] = value }
-
-    suspend fun setLandscapeFullscreen(value: Boolean) =
-        context.dataStore.edit { it[Keys.landscapeFullscreen] = value }
-
-    private inline fun <reified T : Enum<T>> enumOrDefault(name: String?, default: T): T =
-        name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
+        /** Read the app's mirrored values from any context (widgets). */
+        fun mirrorPrefs(context: Context): SharedPreferences =
+            context.applicationContext.getSharedPreferences(MIRROR_FILE, Context.MODE_PRIVATE)
+    }
 }

@@ -5,8 +5,8 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 /**
- * Split time into the six digit slots. In 12 h mode hours 1–9 show a BLANK tens card,
- * represented by -1 (spec §8.4).
+ * The six digit slots of the clock. In 12 h mode without a leading zero, hours 1–9 show a
+ * BLANK tens card, represented by [BLANK] (spec §8.4).
  */
 data class TimeParts(
     val hourTens: Int,
@@ -20,29 +20,35 @@ data class TimeParts(
     val isPm: Boolean?
 ) {
     companion object {
-        fun of(epochMillis: Long, zone: ZoneId, use24h: Boolean): TimeParts {
-            val t: ZonedDateTime = Instant.ofEpochMilli(epochMillis).atZone(zone)
-            return of(t, use24h)
-        }
+        const val BLANK = -1
 
-        fun of(t: ZonedDateTime, use24h: Boolean): TimeParts {
-            val h24 = t.hour
-            val minute = t.minute
-            val second = t.second
+        fun of(epochMillis: Long, zone: ZoneId, use24h: Boolean, leadingZero: Boolean = false): TimeParts =
+            of(Instant.ofEpochMilli(epochMillis).atZone(zone), use24h, leadingZero)
+
+        fun of(t: ZonedDateTime, use24h: Boolean, leadingZero: Boolean = false): TimeParts =
+            of(t.hour, t.minute, t.second, use24h, leadingZero)
+
+        fun of(h24: Int, minute: Int, second: Int, use24h: Boolean, leadingZero: Boolean = false): TimeParts {
             return if (use24h) {
                 TimeParts(h24 / 10, h24 % 10, minute / 10, minute % 10, second / 10, second % 10, true, null)
             } else {
                 val h12 = ((h24 + 11) % 12) + 1 // 1..12
-                val tens = if (h12 < 10) -1 else 1
+                val tens = when {
+                    h12 >= 10 -> 1
+                    leadingZero -> 0
+                    else -> BLANK
+                }
                 TimeParts(tens, h12 % 10, minute / 10, minute % 10, second / 10, second % 10, false, h24 >= 12)
             }
         }
     }
 }
 
+/** Hours as displayed (1..12 or 0..23). */
+val TimeParts.displayHour: Int get() = (if (hourTens < 0) 0 else hourTens * 10) + hourOnes
+
 /** One-line spoken summary for TalkBack; refreshed once a minute, not per second. */
 fun TimeParts.spokenSummary(): String {
-    val h = if (hourTens < 0) hourOnes else hourTens * 10 + hourOnes
     val m = minuteTens * 10 + minuteOnes
     val mm = if (m < 10) "0$m" else "$m"
     val suffix = when {
@@ -50,5 +56,20 @@ fun TimeParts.spokenSummary(): String {
         isPm == true -> " PM"
         else -> " AM"
     }
-    return "$h:$mm$suffix"
+    return "$displayHour:$mm$suffix"
+}
+
+/**
+ * A digit value and the resync token it belongs to, packed into ONE Int so both always
+ * arrive in the same state read. This makes "snap, don't animate" after a resume or a
+ * clock change race-free: a digit can never see the new token with a stale value.
+ */
+@JvmInline
+value class DigitState(val packed: Int) {
+    val value: Int get() = (packed and 0xF) - 1
+    val token: Int get() = packed ushr 4
+
+    companion object {
+        fun of(value: Int, token: Int) = DigitState(((token and 0x0FFFFFFF) shl 4) or ((value + 1) and 0xF))
+    }
 }

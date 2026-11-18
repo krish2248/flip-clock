@@ -1,3 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Flip</string>
+
+    <!-- Sheet -->
+    <string name="settings_title">Customize</string>
+    <string name="done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="hint_tap">Tap anywhere to customize</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="seconds_short">%1$d s</string>
+    <string name="minutes_short">%1$d min</string>
+
+    <!-- Sections -->
+    <string name="section_appearance">Appearance</string>
+    <string name="section_clock">Clock</string>
+    <string name="section_info">Information</string>
+    <string name="section_nightstand">Nightstand</string>
+    <string name="section_widgets">Home screen widgets</string>
+    <string name="section_about">About</string>
+
+    <!-- Appearance -->
+    <string name="setting_theme">Theme</string>
+    <string name="theme_auto">Auto</string>
+    <string name="theme_dynamic">Material You</string>
+    <string name="theme_midnight">Midnight</string>
+    <string name="theme_paper">Paper</string>
+    <string name="theme_amoled">AMOLED</string>
+    <string name="theme_retro">Retro</string>
+    <string name="theme_ocean">Ocean</string>
+    <string name="theme_forest">Forest</string>
+    <string name="theme_rose">Rose</string>
+    <string name="theme_sand">Sand</string>
+    <string name="theme_neon">Neon</string>
+
+    <string name="setting_font">Font</string>
+    <string name="font_classic">Classic</string>
+    <string name="font_heavy">Heavy</string>
+    <string name="font_condensed">Condensed</string>
+    <string name="font_thin">Light</string>
+    <string name="font_serif">Serif</string>
+    <string name="font_mono">Mono</string>
+
+    <string name="setting_card_shape">Card shape</string>
+    <string name="shape_round">Round</string>
+    <string name="shape_classic">Classic</string>
+    <string name="shape_sharp">Sharp</string>
+
+    <string name="setting_clock_size">Clock size</string>
+
+    <string name="setting_separator">Separator</string>
+    <string name="sep_dots">Dots</string>
+    <string name="sep_blink">Blink</string>
+    <string name="sep_bar">Bars</string>
+    <string name="sep_none">None</string>
+
+    <!-- Clock -->
+    <string name="setting_hour_format">Hour format</string>
+    <string name="hours_system">System</string>
+    <string name="hours_12">12-hour</string>
+    <string name="hours_24">24-hour</string>
+    <string name="setting_leading_zero">Leading zero</string>
+    <string name="setting_leading_zero_desc">Show 09:41 instead of 9:41</string>
+    <string name="setting_seconds">Show seconds</string>
+    <string name="setting_seconds_desc">Uses slightly more battery</string>
+    <string name="setting_seconds_hidden">Seconds hidden: screen too narrow</string>
+    <string name="setting_flip_speed">Flip speed</string>
+    <string name="speed_fast">Fast</string>
+    <string name="speed_normal">Normal</string>
+    <string name="speed_relaxed">Relaxed</string>
+    <string name="setting_bounce">Bounce on landing</string>
+    <string name="setting_bounce_desc">The flap settles with a tiny rebound</string>
+    <string name="setting_sound">Flip sound</string>
+    <string name="setting_sound_desc">A soft clack on every flip. Muted in silent mode</string>
+
+    <!-- Information -->
+    <string name="setting_show_date">Show date</string>
+    <string name="date_day_month">Day, month</string>
+    <string name="date_full">Full</string>
+    <string name="date_full_year">Full with year</string>
+    <string name="date_short">Short</string>
+    <string name="date_numeric">Numeric</string>
+    <string name="date_weekday">Weekday</string>
+    <string name="date_iso">ISO</string>
+    <string name="setting_alarm">Next alarm</string>
+    <string name="setting_alarm_desc">From any alarm app on this device</string>
+    <string name="setting_battery">Battery</string>
+    <string name="setting_battery_desc">Level and charging state in the corner</string>
+
+    <!-- Nightstand -->
+    <string name="setting_keep_awake">Keep screen on</string>
+    <string name="awake_always">Always</string>
+    <string name="awake_charging">Charging</string>
+    <string name="awake_never">Never</string>
+    <string name="setting_dim">Dim when idle</string>
+    <string name="setting_dim_desc">Fades this screen down when untouched. Tap to wake</string>
+    <string name="setting_dim_after">After</string>
+    <string name="setting_dim_level">Dimmed brightness</string>
+    <string name="dim_soft">Soft</string>
+    <string name="dim_low">Low</string>
+    <string name="dim_lowest">Lowest</string>
+    <string name="setting_night">Night mode</string>
+    <string name="setting_night_desc">Red digits that preserve night vision</string>
+    <string name="night_off">Off</string>
+    <string name="night_dimmed">When dim</string>
+    <string name="night_always">Always</string>
+    <string name="setting_burn_in">Burn-in protection</string>
+    <string name="setting_burn_in_desc">Moves the clock a few pixels every minute</string>
+    <string name="setting_fullscreen">Hide system bars</string>
+    <string name="fullscreen_never">Never</string>
+    <string name="fullscreen_landscape">Landscape</string>
+    <string name="fullscreen_always">Always</string>
+
+    <!-- Widgets -->
+    <string name="widget_clock">Flip Clock</string>
+    <string name="widget_clock_desc">Hours and minutes on two flip cards</string>
+    <string name="widget_clock_date">Flip Clock &amp; Date</string>
+    <string name="widget_clock_date_desc">Flip cards with the date and your next alarm</string>
+    <string name="widget_calendar">Flip Calendar</string>
+    <string name="widget_calendar_desc">Today\'s date on a single flip card</string>
+    <string name="widget_mini">Flip Mini</string>
+    <string name="widget_mini_desc">A compact one-card clock</string>
+    <string name="widget_add">Add</string>
+    <string name="widget_manual_hint">Long-press your home screen, choose Widgets, then find Flip.</string>
+    <string name="widget_config_title">Style your widget</string>
+    <string name="widget_config_style">Style</string>
+    <string name="widget_config_opacity">Background opacity</string>
+    <string name="widget_config_save">Save widget</string>
+    <string name="widget_theme_app">Same as app</string>
+    <string name="widget_theme_glass">Glass</string>
+    <string name="widget_hours_app">Same as app</string>
+
+    <!-- About -->
+    <string name="about_version">Flip %1$s</string>
+    <string name="about_privacy_line">No ads. No tracking. No internet permission.</string>
+    <string name="about_privacy_policy">Privacy policy</string>
+    <string name="about_rate">Rate Flip</string>
+    <string name="about_source">Source code</string>
+    <string name="about_reset">Reset to defaults</string>
+    <string name="about_reset_desc">Restore every setting above</string>
+    <string name="reset_title">Reset all settings?</string>
+    <string name="reset_message">Theme, font, layout and nightstand options return to their defaults. Widgets keep their own style.</string>
+    <string name="reset_confirm">Reset</string>
 </resources>

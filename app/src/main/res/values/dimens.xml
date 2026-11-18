@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ launchers add their own widget padding; older ones need ours. -->
+    <dimen name="widget_outer_padding">8dp</dimen>
+    <dimen name="widget_radius">22dp</dimen>
+    <dimen name="widget_inner_padding">10dp</dimen>
+    <dimen name="widget_card_radius">12dp</dimen>
+    <dimen name="widget_card_gap">6dp</dimen>
+    <dimen name="widget_seam">2dp</dimen>
+    <dimen name="widget_digit_padding">4dp</dimen>
+    <dimen name="widget_mini_padding">6dp</dimen>
+    <dimen name="widget_ampm_margin">7dp</dimen>
+    <dimen name="widget_info_gap">6dp</dimen>
+</resources>

@@ -4,22 +4,18 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- top half of the split-flap card -->
-    <path
-        android:fillColor="#F4F4F6"
-        android:pathData="M35,30 L73,30 A5,5 0 0 1 78,35 L78,53 L30,53 L30,35 A5,5 0 0 1 35,30 Z" />
-
-    <!-- bottom half of the split-flap card -->
-    <path
-        android:fillColor="#E4E4E9"
-        android:pathData="M30,55 L78,55 L78,73 A5,5 0 0 1 73,78 L35,78 A5,5 0 0 1 30,73 Z" />
-
-    <!-- glyph "7" spanning both halves -->
-    <path
-        android:pathData="M43,36 L65,36 L51,71"
-        android:strokeColor="#0B0B0D"
-        android:strokeWidth="7"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+    <!-- soft drop shadow -->
+    <path android:fillColor="#40000000" android:pathData="M36,30 L72,30 A6,6 0 0 1 78,36 L78,76 A6,6 0 0 1 72,82 L36,82 A6,6 0 0 1 30,76 L30,36 A6,6 0 0 1 36,30 Z" />
+    <!-- upper flap (lighter: lit from above) -->
+    <path android:fillColor="#FF2A2A31" android:pathData="M36,28 L72,28 A6,6 0 0 1 78,34 L78,52.6 L30,52.6 L30,34 A6,6 0 0 1 36,28 Z" />
+    <!-- lower flap -->
+    <path android:fillColor="#FF1F1F25" android:pathData="M30,55.4 L78,55.4 L78,74 A6,6 0 0 1 72,80 L36,80 A6,6 0 0 1 30,74 Z" />
+    <!-- numeral -->
+    <path android:fillColor="#FFF4F4F6" android:pathData="M42.5,35 L66,35 L66,40.6 L53.6,73 L46.8,73 L58.6,40.6 L42.5,40.6 Z" />
+    <!-- seam re-cut through the numeral, plus hinge notches -->
+    <path android:fillColor="#FF0B0B0D" android:pathData="M30,52.6 L78,52.6 L78,55.4 L30,55.4 Z" />
+    <path android:fillColor="#FF0B0B0D" android:pathData="M30,50.5 L31.8,50.5 L31.8,57.5 L30,57.5 Z" />
+    <path android:fillColor="#FF0B0B0D" android:pathData="M76.2,50.5 L78,50.5 L78,57.5 L76.2,57.5 Z" />
+    <!-- amber accent dot (AM/PM lamp) -->
+    <path android:fillColor="#FFE8A33D" android:pathData="M37,37 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
 </vector>

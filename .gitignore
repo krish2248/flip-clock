@@ -2,6 +2,7 @@
 .gradle/
 build/
 app/build/
+.kotlin/
 
 # IDE
 .idea/
@@ -15,6 +16,11 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Signing — NEVER commit
+keystore.properties
+*.jks
+*.keystore
 
 # Misc
 *.log
