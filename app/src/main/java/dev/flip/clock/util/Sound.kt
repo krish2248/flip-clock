@@ -81,10 +81,10 @@ internal fun synthesizeClackWav(sampleRate: Int = 22050): ByteArray {
         data[i * 2] = (v and 0xFF).toByte()
         data[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
     }
-    return wavHeader(sampleRate, data.size) + data
+    return pcmWavHeader(sampleRate, data.size) + data
 }
 
-private fun wavHeader(sampleRate: Int, dataSize: Int): ByteArray {
+internal fun pcmWavHeader(sampleRate: Int, dataSize: Int): ByteArray {
     val h = ByteArray(44)
     fun putInt(off: Int, v: Int) {
         h[off] = (v and 0xFF).toByte(); h[off + 1] = ((v shr 8) and 0xFF).toByte()

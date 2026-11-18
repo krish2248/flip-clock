@@ -10,41 +10,42 @@
 
 ---
 
-## Current state (end of Session 3 — 2026-11-18)
+## Current state (end of Session 5 — 2026-11-18)
 
-- **Version:** 2.0.0 (versionCode 2). Full rewrite of UI + flip engine, widgets added.
-- **Builds:** ✅ `:app:compileDebugKotlin`, ✅ `:app:assembleDebug`, ✅ `:app:testDebugUnitTest` (23/23 pass).
-- **Not yet run this session:** `assembleRelease`, `bundleRelease`, `lintRelease`. Do these first.
-- **Not yet verified on a device/emulator.** Nothing has been seen running yet — see Next up.
+- **Version:** 2.1.0 (versionCode 3). Adds Timer + Stopwatch modes, floating navigation,
+  swipe between modes, screen saver (DreamService), launcher shortcuts.
+- **Builds:** ✅ unit tests (35), ✅ `lintRelease`, ✅ `assembleRelease`, ✅ `bundleRelease`
+  (see Session 5 entry for exact results).
+- **Seen rendered:** ✅ via Robolectric screenshots (`store/screens/*.png`, real MainActivity,
+  native graphics). ❌ Still never run on a real device/emulator — animation feel, sound,
+  widgets, dream and shortcuts are unverified on hardware.
 - **Toolchain:** JDK 17 (Temurin), Gradle **8.14.3**, AGP **8.13.0**, Kotlin **2.2.20**,
-  Compose BOM **2025.10.01**, compileSdk/targetSdk **36** (Play requires 36 for new apps
-  from Aug 2026), minSdk 26. `local.properties` → `sdk.dir=C:/Users/sonik/AppData/Local/Android/Sdk`
-  (forward slashes — backslashes broke it).
-- **Signing:** wired in `app/build.gradle.kts`, reads git-ignored `keystore.properties`
-  (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). **No keystore created yet.**
-  Without it, release builds come out unsigned.
+  Compose BOM **2025.10.01**, compileSdk/targetSdk **36**, minSdk 26, Robolectric **4.16**
+  (tests only). `local.properties` → `sdk.dir=C\:/Users/sonik/AppData/Local/Android/Sdk`
+  (escaped colon; lint's PropertyEscape check requires it).
+- **Signing:** wired in `app/build.gradle.kts`, reads git-ignored `keystore.properties`.
+  **No keystore created yet** → release builds are unsigned.
 
-## Next up (start here tonight)
+## Next up
 
-1. **Release build + lint:** `./gradlew :app:lintRelease :app:assembleRelease :app:bundleRelease`
-   and fix anything lint flags (abortOnError is on).
-2. **Create upload keystore** (keep it OUTSIDE the repo, back it up — losing it means a
-   Play support reset):
+1. **Create upload keystore** (owner should do this so passwords stay with them; keep it
+   OUTSIDE the repo and back it up):
    `keytool -genkeypair -v -keystore ../flip-upload.jks -alias flip -keyalg RSA -keysize 2048 -validity 10000`
-   then write `keystore.properties` in the repo root pointing at it. Rebuild `bundleRelease`
-   → `app/build/outputs/bundle/release/app-release.aab` is what goes to Play.
-3. **See it running.** No AVD exists. Installing a system image was blocked by the
-   permission classifier (it needed `sdkmanager` + license acceptance). Either the owner
-   runs `! sdkmanager "system-images;android-36;google_apis;x86_64"` and creates an AVD,
-   or install the debug APK on a phone via `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
-   Then check: flip animation look (shading, seam, bounce, direction of rotation),
-   settings sheet open/drag/predictive back, live clock preview transform, every theme,
-   all 4 widgets (sizes, colours, Glass, Material You), dimming + wake-tap, night mode.
-4. **Store listing:** write `store/listing.md` (title, short + full description),
-   `PRIVACY.md` in repo root (the in-app link points to
-   `github.com/krish2248/flip-clock/blob/main/PRIVACY.md` — it must exist before release),
-   take phone screenshots for Play (needs step 3).
-5. Optional polish: Roborazzi/Compose screenshot tests; README.md for the repo.
+   then `keystore.properties` in the repo root. Rebuild `bundleRelease`.
+2. **Run on a phone:** `adb install -r app/build/outputs/apk/debug/app-debug.apk`. Check:
+   flip feel, timer chime (alarm stream), swipe between modes, controls auto-hide, settings
+   sheet + live preview in all 3 modes, widgets, screen saver (Settings → Display → Screen
+   saver → Flip), long-press icon shortcuts, dimming + wake-tap, night mode, landscape.
+3. **Play screenshots:** `./gradlew :app:testDebugUnitTest -Pscreenshots --tests "*ScreenshotTest*"`
+   regenerates `store/screens/`. Real-device screenshots are better for the listing (the
+   Robolectric ones have no status bar).
+4. **Known limitation — background timer:** zero permissions means no notification and no
+   exact alarm. The chime plays while the process is alive (screen is kept on while a timer
+   runs); if Android freezes the app, the timer shows "Time's up" on return (silent if more
+   than 60 s late). If the owner wants a reliable background alert: POST_NOTIFICATIONS +
+   a foreground service or `setAlarmClock` (needs SCHEDULE_EXACT_ALARM) — this breaks the
+   "no permissions" store claim, so it's the owner's call.
+5. Optional: landscape screenshot test; tablet layout pass.
 
 ---
 
@@ -79,7 +80,14 @@ dev/flip/clock/
 │   ├── Separator.kt / AmPmTag.kt / InfoLine.kt / BatteryBadge.kt
 │   └── theme/ Palettes.kt (11 palettes as ARGB ints), DynamicPalette.kt (Material You),
 │              Color.kt, Theme.kt (animated colours + derived M3 scheme), Type.kt (6 fonts)
-├── util/ Dimming.kt, SystemBars.kt, Sound.kt (synthesised clack)
+├── tools/
+│   ├── ToolStates.kt              AppMode; Stopwatch/Timer as pure immutable data (elapsedRealtime)
+│   └── ToolsController.kt         process singleton: mode, timer, stopwatch, chime; persisted
+│                                  to prefs "flip_tools" (reset on reboot via BOOT_COUNT)
+├── dream/FlipDreamService.kt      screen saver; supplies Lifecycle/ViewModel/SavedState owners
+├── ui/Chrome.kt                   ModeSwitcher pill, floating gear, ControlButton, RepeatButton
+├── ui/ToolPanes.kt                TimerPane / StopwatchPane on the same ClockFace + flip cards
+├── util/ Dimming.kt, SystemBars.kt, Sound.kt (synthesised clack), Chime.kt (timer bell)
 └── widget/
     ├── WidgetModels.kt            4 kinds, 13 widget themes, per-widget prefs store
     ├── WidgetRenderer.kt          RemoteViews + TextClock; day/night CSL on API 31+
@@ -93,6 +101,17 @@ rendered by `tools/images.py` (`python tools/images.py app/src/main/res store`, 
 Re-run the scripts instead of hand-editing generated files.
 
 ## Key decisions (and why)
+
+- **Navigation (v2.1):** tap = show/hide floating chrome (mode pill + gear), auto-hides
+  after 5 s; swipe ←/→ = change mode; settings moved behind the gear (tap no longer opens
+  it). Transport buttons hide with the chrome only while running, so idle screens stay usable.
+- **Timer/stopwatch never use wall-clock time** — elapsedRealtime only, so timezone / clock
+  changes can't corrupt them. Display ticks are scheduled to the exact second boundary
+  (no per-frame polling); only the stopwatch hundredths redraw per frame.
+- **ToolsController lives in AppContainer, not a ViewModel**, so a running timer survives
+  rotation, mode switches and leaving the screen; state is persisted for process death.
+- **Live preview extracted** into `rememberLivePreview()` so all three modes glide/shrink
+  beside the settings sheet.
 
 - **DigitState packs value + resync token into one Int** → a resume/time-change can never
   deliver the new token with a stale digit, so digits snap instead of animating wrongly.
@@ -109,7 +128,8 @@ Re-run the scripts instead of hand-editing generated files.
   stepped at 25 Hz (each step is a WindowManager IPC), plus a black overlay for any palette.
 - **Sound** plays on landing of minute-ones (or seconds-ones when seconds shown); v1 was
   silent whenever seconds were hidden.
-- Still zero permissions, zero network, no third-party libraries beyond AndroidX.
+- Still zero permissions, zero network, no third-party libraries beyond AndroidX
+  (Robolectric is test-only).
 
 ## Options (25+)
 Theme (Auto, Material You, Midnight, Paper, AMOLED, Retro, Ocean, Forest, Rose, Sand, Neon) ·
@@ -146,3 +166,19 @@ pinnable from inside the app.
 - Added 23 JVM unit tests (TimeParts, FlipMath, FlipGeometry, Ticker, DateFormats) — all pass.
 - Git: local folder was a zip download; re-attached to `origin/main` history and pushed.
 - Stopped before release build/lint/signing and before any on-device run (see Next up).
+
+### Session 4 — 2026-11-18 (evening)
+- No network this session. Release APK + AAB built with lint-vital skipped.
+- Wrote `PRIVACY.md` and `store/listing.md`.
+
+### Session 5 — 2026-11-18 (night)
+- Owner asked: review everything, add features, make it aesthetic / easy to navigate /
+  optimized, commit + push.
+- First real lint run: 3 errors fixed (NewApi on windowLayoutInDisplayCutoutMode,
+  PropertyEscape in local.properties, SuspiciousIndentation) + perf warnings (lambda
+  `offset` in SegmentedControl, KTX `edit`/`toUri`/`toDrawable`).
+- Added Timer, Stopwatch, mode switcher + swipe navigation, screen saver, launcher
+  shortcuts, timer chime, Robolectric screenshot test, README, 12 new unit tests.
+- Fixed pre-existing layout bug: clock face filled the full width, so burn-in shift pushed
+  the first card off-screen → 18 dp side margin.
+- Version 2.1.0 (code 3).

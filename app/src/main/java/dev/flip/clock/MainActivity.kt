@@ -1,7 +1,7 @@
 package dev.flip.clock
 
+import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
@@ -11,7 +11,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.graphics.drawable.toDrawable
 import dev.flip.clock.ui.ClockScreen
+import dev.flip.clock.tools.AppMode
 import dev.flip.clock.ui.ClockViewModel
 import dev.flip.clock.ui.theme.ClockTheme
 import dev.flip.clock.ui.theme.Palettes
@@ -31,11 +33,28 @@ class MainActivity : ComponentActivity() {
 
         // Cold start (spec §9 case 11): paint the window in the stored theme's colour
         // before Compose draws, so a light theme never flashes dark (or vice versa).
-        window.setBackgroundDrawable(ColorDrawable(launchScreenColor()))
+        window.setBackgroundDrawable(launchScreenColor().toDrawable())
 
-        setContent { ClockScreen(viewModel = viewModel, activity = this) }
+        val tools = (application as FlipApp).container.tools
+        if (savedInstanceState == null) handleModeIntent(intent)
+        setContent { ClockScreen(viewModel = viewModel, tools = tools, activity = this) }
 
         holdFirstFrameUntilSettingsLoad()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleModeIntent(intent)
+    }
+
+    /** Launcher shortcuts ("Timer", "Stopwatch") open straight into that mode. */
+    private fun handleModeIntent(intent: Intent?) {
+        val mode = intent?.getStringExtra(EXTRA_MODE) ?: return
+        (application as FlipApp).container.tools.setMode(AppMode.fromName(mode))
+    }
+
+    companion object {
+        const val EXTRA_MODE = "dev.flip.clock.extra.MODE"
     }
 
     private fun launchScreenColor(): Int {

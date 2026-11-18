@@ -31,7 +31,9 @@ object FlipGeometryCalculator {
         landscape: Boolean,
         showSeconds: Boolean,
         scale: Float = 1f,
-        radiusFactor: Float = 0.10f
+        radiusFactor: Float = 0.10f,
+        /** false = never drop the third group (timer / stopwatch need their seconds). */
+        allowDropSeconds: Boolean = true
     ): FlipGeometry {
         val groups = if (showSeconds) 3 else 2
         val digits = groups * 2
@@ -45,7 +47,7 @@ object FlipGeometryCalculator {
         val fitW = if (cardWFromW < cardWFromH) cardWFromW else cardWFromH
         val fitH = fitW / CARD_ASPECT
 
-        if (showSeconds && fitH < MIN_CARD_H) {
+        if (allowDropSeconds && showSeconds && fitH < MIN_CARD_H) {
             // Too narrow: drop the seconds group rather than shrinking below legibility.
             return compute(availW, availH, landscape, false, scale, radiusFactor)
                 .copy(secondsForcedOff = true)

@@ -3,7 +3,7 @@ package dev.flip.clock.settings
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.LooksOne
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Nightlight
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.RoundedCorner
@@ -470,6 +471,14 @@ private fun SheetContent(
                     label = { stringResource(it.label) },
                     onSelect = { v -> onUpdate { it.copy(fullscreen = v) } }
                 )
+                GroupDivider()
+                SettingRow(
+                    Icons.Rounded.Nightlight,
+                    stringResource(R.string.setting_screensaver),
+                    stringResource(R.string.setting_screensaver_desc)
+                ) {
+                    PillButton(stringResource(R.string.setting_screensaver_open)) { openDreamSettings(context) }
+                }
             }
         }
 
@@ -608,8 +617,21 @@ private fun FlipPreview(s: FlipSettings) {
 
 private fun openUrl(context: Context, url: String) {
     try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: ActivityNotFoundException) {
+    }
+}
+
+/** System screen-saver settings, where "Flip" can be picked. */
+private fun openDreamSettings(context: Context) {
+    try {
+        context.startActivity(
+            Intent(android.provider.Settings.ACTION_DREAM_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (_: ActivityNotFoundException) {
+        context.startActivity(
+            Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
 
@@ -617,7 +639,7 @@ private fun openStore(context: Context) {
     val pkg = context.packageName.removeSuffix(".debug")
     try {
         context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent(Intent.ACTION_VIEW, "market://details?id=$pkg".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     } catch (_: ActivityNotFoundException) {
         openUrl(context, "https://play.google.com/store/apps/details?id=$pkg")

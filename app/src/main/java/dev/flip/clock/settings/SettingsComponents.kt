@@ -65,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.flip.clock.flip.CardPainter
@@ -259,14 +260,15 @@ fun <T> SegmentedControl(
             .padding(4.dp)
     ) {
         val segW: Dp = maxWidth / options.size
-        val offset by animateDpAsState(
+        val offset = animateDpAsState(
             targetValue = segW * index,
             animationSpec = spring(dampingRatio = 0.78f, stiffness = 520f),
             label = "segmentIndicator"
         )
         Box(
             Modifier
-                .offset(x = offset)
+                // Lambda overload: the slide is read at placement, never recomposing.
+                .offset { IntOffset(offset.value.roundToPx(), 0) }
                 .width(segW)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(10.dp))

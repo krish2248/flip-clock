@@ -6,10 +6,32 @@
     <string name="settings_title">Customize</string>
     <string name="done">Done</string>
     <string name="cancel">Cancel</string>
-    <string name="hint_tap">Tap anywhere to customize</string>
+    <string name="hint_tap">Tap for controls · swipe for timer &amp; stopwatch</string>
     <string name="percent_value">%1$d%%</string>
     <string name="seconds_short">%1$d s</string>
     <string name="minutes_short">%1$d min</string>
+    <string name="hours_short">%1$d h</string>
+
+    <!-- Modes -->
+    <string name="mode_clock">Clock</string>
+    <string name="mode_timer">Timer</string>
+    <string name="mode_stopwatch">Stopwatch</string>
+    <string name="action_start">Start</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_reset">Reset</string>
+    <string name="action_lap">Lap</string>
+    <string name="action_add_minute">Add one minute</string>
+    <string name="action_add_minute_short">+1:00</string>
+    <string name="timer_ends_at">Ends at %1$s</string>
+    <string name="timer_paused">Paused</string>
+    <string name="timer_done">Time\'s up</string>
+    <string name="timer_increase">Increase %1$s</string>
+    <string name="timer_decrease">Decrease %1$s</string>
+    <string name="unit_hours">hours</string>
+    <string name="unit_minutes">minutes</string>
+    <string name="unit_seconds">seconds</string>
+    <string name="lap_label">Lap %1$d</string>
 
     <!-- Sections -->
     <string name="section_appearance">Appearance</string>
@@ -110,6 +132,9 @@
     <string name="fullscreen_never">Never</string>
     <string name="fullscreen_landscape">Landscape</string>
     <string name="fullscreen_always">Always</string>
+    <string name="setting_screensaver">Screen saver</string>
+    <string name="setting_screensaver_desc">Show Flip while charging or docked</string>
+    <string name="setting_screensaver_open">Set up</string>
 
     <!-- Widgets -->
     <string name="widget_clock">Flip Clock</string>

@@ -17,10 +17,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +42,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,11 +50,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +79,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -84,6 +91,7 @@ import dev.flip.clock.R
 import dev.flip.clock.flip.FlipGeometry
 import dev.flip.clock.flip.FlipGeometryCalculator
 import dev.flip.clock.flip.FlipSpec
+import dev.flip.clock.settings.CardShape
 import dev.flip.clock.settings.FlipSettings
 import dev.flip.clock.settings.FullscreenMode
 import dev.flip.clock.settings.KeepAwake
@@ -93,6 +101,9 @@ import dev.flip.clock.settings.SheetEnv
 import dev.flip.clock.settings.SheetState
 import dev.flip.clock.settings.rememberSheetState
 import dev.flip.clock.time.DateFormats
+import dev.flip.clock.tools.AppMode
+import dev.flip.clock.tools.ToolsController
+import dev.flip.clock.ui.theme.ClockFont
 import dev.flip.clock.ui.theme.ClockTheme
 import dev.flip.clock.ui.theme.FlipColors
 import dev.flip.clock.ui.theme.FlipTheme
@@ -106,6 +117,7 @@ import dev.flip.clock.util.idleWake
 import dev.flip.clock.util.rememberIdleDim
 import kotlinx.coroutines.delay
 import java.time.ZonedDateTime
+import kotlin.math.abs
 import kotlin.math.min
 
 /** Burn-in protection: the face walks a 3×3 grid, one step per minute. */
@@ -113,23 +125,36 @@ private val ShiftPattern = arrayOf(
     0 to 0, 1 to 0, 1 to 1, 0 to 1, -1 to 1, -1 to 0, -1 to -1, 0 to -1, 1 to -1
 )
 private val MAX_SHIFT = 5.dp
+private val CLOCK_SIDE_MARGIN = 18.dp
+private const val CHROME_HIDE_MS = 5_000L
 
+/**
+ * Root screen. Tap anywhere to show / hide the floating controls (mode switcher +
+ * settings); swipe left / right to move between Clock, Timer and Stopwatch.
+ */
 @Composable
-fun ClockScreen(viewModel: ClockViewModel, activity: Activity) {
+fun ClockScreen(viewModel: ClockViewModel, tools: ToolsController, activity: Activity) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val battery by viewModel.battery.collectAsStateWithLifecycle()
     val use24h by viewModel.use24h.collectAsStateWithLifecycle()
+    val mode by tools.mode.collectAsStateWithLifecycle()
+    val timer by tools.timer.collectAsStateWithLifecycle()
+    val stopwatch by tools.stopwatch.collectAsStateWithLifecycle()
+    val ringing by tools.ringing.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val sheet = rememberSheetState(scope)
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
     ResyncEffects(viewModel)
 
+    // A running timer keeps the screen on (so its chime can fire); so does a running
+    // stopwatch you are looking at.
     val keepOn = when (settings.keepAwake) {
         KeepAwake.ALWAYS -> true
         KeepAwake.CHARGING -> battery.pluggedIn
         KeepAwake.NEVER -> false
-    }
+    } || timer.running || (mode == AppMode.STOPWATCH && stopwatch.running)
     KeepScreenOn(activity, keepOn)
 
     val dim = rememberIdleDim(
@@ -137,11 +162,28 @@ fun ClockScreen(viewModel: ClockViewModel, activity: Activity) {
         enabled = settings.autoDim,
         delaySec = settings.dimDelaySec,
         targetBrightness = settings.dimLevel.brightness,
-        suspended = sheet.isOpen
+        suspended = sheet.isOpen || ringing
     )
     val nightRed = settings.nightMode == NightMode.ALWAYS ||
         (settings.nightMode == NightMode.WHEN_DIMMED && dim.dimmed)
     val palette = rememberPalette(settings.theme, nightRed)
+
+    // Floating controls: shown on launch and on tap, fading away after a few idle seconds.
+    var chromeVisible by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(chromeVisible, dim.lastInteractionMs, sheet.isOpen) {
+        if (chromeVisible && !sheet.isOpen) {
+            delay(CHROME_HIDE_MS)
+            chromeVisible = false
+        }
+    }
+    // Time is up: jump to the timer, wake the screen and show the stop button.
+    LaunchedEffect(ringing) {
+        if (ringing) {
+            tools.setMode(AppMode.TIMER)
+            dim.onTouch()
+            chromeVisible = true
+        }
+    }
 
     FlipTheme(palette) {
         val colors = LocalFlipColors.current
@@ -160,6 +202,12 @@ fun ClockScreen(viewModel: ClockViewModel, activity: Activity) {
 
         var rootSize by remember { mutableStateOf(IntSize.Zero) }
         var secondsForcedOff by remember { mutableStateOf(false) }
+        val sheetRef by rememberUpdatedState(sheet)
+        val modeRef by rememberUpdatedState(mode)
+        val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
+        val player = if (settings.soundEnabled) viewModel.soundPlayer else null
+        val onTick: (() -> Unit)? = if (player != null) ({ player.play() }) else null
+        val controlsVisible = chromeVisible || sheet.isOpen
 
         Box(
             Modifier
@@ -167,29 +215,101 @@ fun ClockScreen(viewModel: ClockViewModel, activity: Activity) {
                 .background(colors.screen)
                 .onSizeChanged { rootSize = it }
                 // Initial pass: any touch resets the idle timer; the first touch on a
-                // dimmed clock only wakes it (it never opens settings by accident).
+                // dimmed screen only wakes it (it never toggles anything by accident).
                 .idleWake(dim) { dim.dimmed }
-                .pointerInput(sheet) { detectTapGestures(onTap = { sheet.toggle() }) }
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = {
+                        if (sheetRef.isOpen) sheetRef.close() else chromeVisible = !chromeVisible
+                    })
+                }
+                .pointerInput(rtl) {
+                    var total = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            if (!sheetRef.isOpen && abs(total) > swipeThreshold) {
+                                val step = (if (total < 0f) 1 else -1) * (if (rtl) -1 else 1)
+                                val next = (modeRef.ordinal + step).coerceIn(0, AppMode.entries.size - 1)
+                                tools.setMode(AppMode.entries[next])
+                                chromeVisible = true
+                            }
+                        },
+                        onHorizontalDrag = { change, delta ->
+                            total += delta
+                            change.consume()
+                        }
+                    )
+                }
         ) {
-            ClockLayer(
-                viewModel = viewModel,
-                settings = settings,
-                landscape = landscape,
-                colors = colors,
-                sheet = sheet,
-                rootSize = { rootSize },
-                soundOn = settings.soundEnabled,
-                onSecondsForcedOff = { secondsForcedOff = it }
-            )
+            AnimatedContent(
+                targetState = mode,
+                transitionSpec = {
+                    val dir = (if (targetState.ordinal > initialState.ordinal) 1 else -1) * (if (rtl) -1 else 1)
+                    (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 420f)) { dir * it / 5 } +
+                        fadeIn(tween(280, delayMillis = 40))) togetherWith
+                        (slideOutHorizontally(tween(220)) { -dir * it / 6 } + fadeOut(tween(160)))
+                },
+                label = "mode"
+            ) { m ->
+                when (m) {
+                    AppMode.CLOCK -> ClockLayer(
+                        viewModel = viewModel,
+                        settings = settings,
+                        landscape = landscape,
+                        colors = colors,
+                        sheet = sheet,
+                        rootSize = { rootSize },
+                        onTick = onTick,
+                        onSecondsForcedOff = { secondsForcedOff = it }
+                    )
+                    AppMode.TIMER -> TimerPane(
+                        tools, settings, colors, landscape,
+                        controlsVisible = controlsVisible,
+                        onTick = onTick,
+                        modifier = rememberLivePreview(sheet, { rootSize }, landscape)
+                    )
+                    AppMode.STOPWATCH -> StopwatchPane(
+                        tools, settings, colors, landscape,
+                        controlsVisible = controlsVisible,
+                        onTick = onTick,
+                        modifier = rememberLivePreview(sheet, { rootSize }, landscape)
+                    )
+                }
+            }
 
             if (settings.showBattery) {
-                BatteryBadge(
-                    battery, colors,
-                    Modifier
+                AnimatedVisibility(
+                    visible = !chromeVisible || sheet.isOpen,
+                    enter = fadeIn(tween(300)),
+                    exit = fadeOut(tween(150)),
+                    modifier = Modifier
                         .align(Alignment.TopEnd)
                         .safeDrawingPadding()
                         .padding(horizontal = 18.dp, vertical = 14.dp)
-                )
+                ) {
+                    BatteryBadge(battery, colors)
+                }
+            }
+
+            // Mode switcher + settings, floating at the top.
+            AnimatedVisibility(
+                visible = chromeVisible && !sheet.isOpen,
+                enter = fadeIn(tween(260)) + slideInVertically(spring(dampingRatio = 0.8f, stiffness = 420f)) { -it / 2 },
+                exit = fadeOut(tween(220)) + slideOutVertically(tween(260)) { -it / 3 },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .safeDrawingPadding()
+                    .padding(top = 10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ModeSwitcher(mode, onSelect = { tools.setMode(it) })
+                    Spacer(Modifier.width(10.dp))
+                    FloatingIconButton(
+                        Icons.Rounded.Tune,
+                        stringResource(R.string.settings_title),
+                        onClick = { sheet.open() }
+                    )
+                }
             }
 
             // Uniform dark veil while dimmed — works for every palette, light ones included.
@@ -233,7 +353,7 @@ fun ClockScreen(viewModel: ClockViewModel, activity: Activity) {
 
 /** Snap-resync on resume and on clock / timezone / 12-24 h changes (spec §8.3). */
 @Composable
-private fun ResyncEffects(viewModel: ClockViewModel) {
+fun ResyncEffects(viewModel: ClockViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     DisposableEffect(lifecycleOwner) {
@@ -258,19 +378,19 @@ private fun ResyncEffects(viewModel: ClockViewModel) {
     }
 }
 
+/** The flip clock with its date / alarm line. [sheet] is null on the screen saver. */
 @Composable
-private fun ClockLayer(
+fun ClockLayer(
     viewModel: ClockViewModel,
     settings: FlipSettings,
     landscape: Boolean,
     colors: FlipColors,
-    sheet: SheetState,
+    sheet: SheetState?,
     rootSize: () -> IntSize,
-    soundOn: Boolean,
+    onTick: (() -> Unit)?,
     onSecondsForcedOff: (Boolean) -> Unit
 ) {
     val density = LocalDensity.current
-    val layoutDir = LocalLayoutDirection.current
     val digits = DigitStates(
         hourTens = viewModel.hourTens.collectAsStateWithLifecycle(),
         hourOnes = viewModel.hourOnes.collectAsStateWithLifecycle(),
@@ -286,7 +406,7 @@ private fun ClockLayer(
     val minute by viewModel.epochMinute.collectAsStateWithLifecycle()
 
     // Burn-in shift, eased over 2.5 s so the movement is imperceptible.
-    val shiftTarget = if (settings.burnInShift && !sheet.isOpen) {
+    val shiftTarget = if (settings.burnInShift && sheet?.isOpen != true) {
         val (sx, sy) = ShiftPattern[(minute % ShiftPattern.size).toInt()]
         with(density) { Offset(sx * MAX_SHIFT.toPx(), sy * MAX_SHIFT.toPx()) }
     } else Offset.Zero
@@ -299,17 +419,13 @@ private fun ClockLayer(
     val secondsSpec = remember(settings.flipBounce, shade) {
         FlipSpec(FlipSpec.clampDuration(FlipSpec.FLIP_MS_FAST, true), settings.flipBounce, shade)
     }
-    val player = if (soundOn) viewModel.soundPlayer else null
-    val onTick: (() -> Unit)? = if (player != null) ({ player.play() }) else null
-
-    var clockBounds by remember { mutableStateOf(Rect.Zero) }
-    val insets = WindowInsets.safeDrawing
-    val sheetState by rememberUpdatedState(sheet)
+    val preview = rememberLivePreview(sheet, rootSize, landscape, shift)
 
     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
         val geo: FlipGeometry = remember(maxWidth, maxHeight, landscape, settings.showSeconds, settings.clockScale, settings.cardShape) {
+            // Side margin keeps the face off the screen edges, burn-in shift included.
             FlipGeometryCalculator.compute(
-                maxWidth, maxHeight, landscape, settings.showSeconds,
+                maxWidth - CLOCK_SIDE_MARGIN * 2, maxHeight, landscape, settings.showSeconds,
                 scale = settings.clockScale, radiusFactor = settings.cardShape.radiusFactor
             )
         }
@@ -321,46 +437,7 @@ private fun ClockLayer(
         Box(
             Modifier
                 .align(Alignment.Center)
-                .onGloballyPositioned { clockBounds = it.boundsInRoot() }
-                .graphicsLayer {
-                    // Live preview: while the settings sheet opens, the real clock glides into
-                    // the free space and shrinks to fit. One progress value drives both.
-                    val p = sheetState.progress.value
-                    val b = clockBounds
-                    val root = rootSize()
-                    var tx = shift.value.x
-                    var ty = shift.value.y
-                    if (p > 0f && b.width > 0f && root.width > 0) {
-                        val extent = sheetState.extentPx
-                        val margin = 24.dp.toPx()
-                        val targetScale: Float
-                        val dx: Float
-                        val dy: Float
-                        if (landscape) {
-                            val left = insets.getLeft(this, layoutDir).toFloat()
-                            val right = root.width - extent
-                            targetScale = min(1f, min((right - left - margin * 2) / b.width, (root.height - margin * 2) / b.height))
-                            dx = (left + right) / 2f - b.center.x
-                            dy = root.height / 2f - b.center.y
-                        } else {
-                            val top = insets.getTop(this).toFloat()
-                            val bottom = root.height - extent
-                            targetScale = min(1f, min((bottom - top - margin) / b.height, (root.width - margin * 2) / b.width))
-                            dx = 0f
-                            dy = (top + bottom) / 2f - b.center.y
-                        }
-                        val s = 1f + (targetScale.coerceAtLeast(0.2f) - 1f) * p
-                        scaleX = s
-                        scaleY = s
-                        tx += dx * p
-                        ty += dy * p
-                    } else {
-                        scaleX = 1f
-                        scaleY = 1f
-                    }
-                    translationX = tx
-                    translationY = ty
-                }
+                .then(preview)
                 .semantics {
                     contentDescription = if (date.isNotEmpty()) "$spoken, $date" else spoken
                     liveRegion = LiveRegionMode.Polite
@@ -410,14 +487,70 @@ private fun ClockLayer(
     }
 }
 
+/**
+ * Live preview: while the settings sheet opens, the content glides into the free space
+ * and shrinks to fit (graphicsLayer only, no relayout). One progress value drives both
+ * the sheet and this transform, so they always move together. Also applies [shift].
+ */
+@Composable
+fun rememberLivePreview(
+    sheet: SheetState?,
+    rootSize: () -> IntSize,
+    landscape: Boolean,
+    shift: State<Offset>? = null
+): Modifier {
+    val insets = WindowInsets.safeDrawing
+    val layoutDir = LocalLayoutDirection.current
+    val bounds = remember { mutableStateOf(Rect.Zero) }
+    return Modifier
+        .onGloballyPositioned { bounds.value = it.boundsInRoot() }
+        .graphicsLayer {
+            val p = sheet?.progress?.value ?: 0f
+            val b = bounds.value
+            val root = rootSize()
+            var tx = shift?.value?.x ?: 0f
+            var ty = shift?.value?.y ?: 0f
+            if (sheet != null && p > 0f && b.width > 0f && root.width > 0) {
+                val extent = sheet.extentPx
+                val margin = 24.dp.toPx()
+                val targetScale: Float
+                val dx: Float
+                val dy: Float
+                if (landscape) {
+                    val left = insets.getLeft(this, layoutDir).toFloat()
+                    val right = root.width - extent
+                    targetScale = min(1f, min((right - left - margin * 2) / b.width, (root.height - margin * 2) / b.height))
+                    dx = (left + right) / 2f - b.center.x
+                    dy = root.height / 2f - b.center.y
+                } else {
+                    val top = insets.getTop(this).toFloat()
+                    val bottom = root.height - extent
+                    targetScale = min(1f, min((bottom - top - margin) / b.height, (root.width - margin * 2) / b.width))
+                    dx = 0f
+                    dy = (top + bottom) / 2f - b.center.y
+                }
+                val sc = 1f + (targetScale.coerceAtLeast(0.2f) - 1f) * p
+                scaleX = sc
+                scaleY = sc
+                tx += dx * p
+                ty += dy * p
+            } else {
+                scaleX = 1f
+                scaleY = 1f
+            }
+            translationX = tx
+            translationY = ty
+        }
+}
+
 private data class LayoutKey(
     val showSeconds: Boolean,
-    val font: dev.flip.clock.ui.theme.ClockFont,
-    val shape: dev.flip.clock.settings.CardShape,
+    val font: ClockFont,
+    val shape: CardShape,
     val geo: FlipGeometry
 )
 
-/** One-time, self-dismissing hint: "Tap anywhere to customise". */
+/** One-time, self-dismissing hint: "Tap for controls · swipe for timer & stopwatch". */
 @Composable
 private fun FirstRunHint(show: Boolean, sheetOpened: Boolean, onDone: () -> Unit) {
     var visible by remember { mutableStateOf(false) }
@@ -429,7 +562,7 @@ private fun FirstRunHint(show: Boolean, sheetOpened: Boolean, onDone: () -> Unit
         }
         delay(900)
         visible = true
-        delay(5500)
+        delay(6500)
         visible = false
         done()
     }

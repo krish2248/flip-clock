@@ -4,4 +4,5 @@
     <include domain="file" path="datastore/" />
     <include domain="sharedpref" path="." />
     <exclude domain="sharedpref" path="flip_widgets.xml" />
+        <exclude domain="sharedpref" path="flip_tools.xml" />
 </full-backup-content>

@@ -1,5 +1,6 @@
 package dev.flip.clock.widget
 
+import androidx.core.net.toUri
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -208,7 +209,7 @@ object WidgetRenderer {
     )
 
     private fun calendarIntent(context: Context): PendingIntent {
-        val uri = android.net.Uri.parse("content://com.android.calendar/time/${System.currentTimeMillis()}")
+        val uri = "content://com.android.calendar/time/${System.currentTimeMillis()}".toUri()
         val intent = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val target = if (intent.resolveActivity(context.packageManager) != null) intent
         else Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

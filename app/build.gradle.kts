@@ -24,8 +24,8 @@ android {
         applicationId = "dev.flip.clock"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "2.1.0"
 
         // Only ship English resources from dependencies (keeps the APK small).
         androidResources.localeFilters += listOf("en")
@@ -88,6 +88,12 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // ./gradlew :app:testDebugUnitTest -Pscreenshots renders store/screens/*.png
+            it.systemProperty("flip.screenshots", project.hasProperty("screenshots").toString())
+            it.systemProperty("flip.screenshotDir", rootProject.file("store/screens").absolutePath)
+        }
     }
 }
 
@@ -117,4 +123,9 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.test.manifest)
 }
